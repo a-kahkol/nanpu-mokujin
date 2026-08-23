@@ -8,6 +8,9 @@
 
   <div class="card" id="card">
     <button class="sound-toggle" id="soundToggle" aria-label="サウンド切替">🔊</button>
+    <div class="name-row">
+      <input id="nameInput" placeholder="お名前（Discord投稿に使用・保存はされません）" maxlength="20" />
+    </div>
 
     <div id="idleView">
       <div class="rule-box">
@@ -78,8 +81,11 @@
         <div class="sub">ゲームオーバー！最終スコア</div>
         <div class="big" id="finalScore">0</div>
         <div class="sub" id="finalCombo"></div>
+        <div class="sub" id="sessionBestLabel"></div>
       </div>
       <div class="result-achievements" id="resultAchievements"></div>
+      <button class="primary" id="discordPostBtn" style="display:none;">🎉 Discordに投稿する</button>
+      <div class="sub" id="discordPostStatus" style="display:none; text-align:center; margin-top:8px;"></div>
       <button class="ghost" id="retryBtn">もう一度挑戦する</button>
     </div>
   </div>
@@ -260,6 +266,13 @@
   #playView, #doneView { opacity: 1; transition: opacity 0.5s ease; }
   #playView.fade-out { opacity: 0; }
   #doneView.fade-in-start { opacity: 0; }
+  .name-row { display: flex; gap: 8px; margin-bottom: 16px; }
+  .name-row input {
+    flex: 1; background: #0e1327; border: 1px solid #333e66;
+    border-radius: 10px; padding: 10px 12px; color: var(--text); font-size: 14px;
+    font-family: var(--font-body);
+  }
+  .name-row input:focus { outline: 2px solid var(--aether); }
 
   .rule-box {
     background: #0e1327; border: 1px solid #262e4d; border-radius: 10px;
@@ -730,6 +743,7 @@
   const HEART_HEAL_AMOUNT = 0.25; // クリティカル1回につきハート1個の1/4分回復
 
   const rootEl = document.getElementById('root');
+  const nameInput = document.getElementById('nameInput');
   const idleView = document.getElementById('idleView');
   const playView = document.getElementById('playView');
   const doneView = document.getElementById('doneView');
@@ -767,6 +781,9 @@
   const finalComboEl = document.getElementById('finalCombo');
   const newBestBanner = document.getElementById('newBestBanner');
   const confettiLayer = document.getElementById('confettiLayer');
+  const sessionBestLabel = document.getElementById('sessionBestLabel');
+  const discordPostBtn = document.getElementById('discordPostBtn');
+  const discordPostStatus = document.getElementById('discordPostStatus');
   const barrierRippleLayer = document.getElementById('barrierRippleLayer');
   const revivalOverlay = document.getElementById('revivalOverlay');
   const revivalZone = document.getElementById('revivalZone');
@@ -842,6 +859,11 @@
   let lastFinalScore = 0;
   let lastMaxCombo = 0;
   let sessionBestScore = 0; // このブラウザタブを開いている間だけの自己ベスト(永続保存はしない)
+
+  // Discord連携:自己ベスト更新時に、手動ボタンでこのフォーラム投稿(スレッド)へスコアを共有する
+  // 注意: このURLは公開リポジトリのソースに含まれるため、誰でも閲覧できてしまいます(参照: プロジェクトでの相談内容)
+  const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1540910788544434216/QfhO5EHFfGUnGUGwlJCEy3v7oVy3PVMdZSXrXPOuvXwYDPXq6hKkcYCVUHf8IKCqxFBg';
+  const DISCORD_THREAD_ID = '1540909802157379655';
 
   const NEAR_MISS_MARGIN = 7; // ヒットゾーンのすぐ外側:ライフは減るがコンボは維持
 
@@ -1773,6 +1795,51 @@
     vibrate([30, 40, 30, 40, 80]);
   }
 
+  async function postScoreToDiscord() {
+    discordPostBtn.disabled = true;
+    discordPostBtn.textContent = '投稿中…';
+    discordPostStatus.style.display = 'none';
+
+    const finalName = (nameInput.value || '名無しの冒険者').trim().slice(0, 20);
+    const achievementLines = unlockedAchievements
+      .map((id) => ACHIEVEMENTS[id])
+      .filter(Boolean)
+      .map((ach) => '🏆 ' + ach.name);
+
+    const payload = {
+      embeds: [{
+        title: '🏆 自己ベスト更新！',
+        description: '**' + finalName + '** さんが「叩け！木人道場」で自己ベストを更新しました！',
+        color: 0xe8c27a,
+        fields: [
+          { name: 'スコア', value: String(lastFinalScore), inline: true },
+          { name: '最大コンボ', value: String(lastMaxCombo), inline: true },
+          { name: '実績', value: achievementLines.length ? achievementLines.join('\n') : 'なし', inline: false }
+        ],
+        timestamp: new Date().toISOString()
+      }]
+    };
+
+    try {
+      const res = await fetch(DISCORD_WEBHOOK_URL + '?thread_id=' + DISCORD_THREAD_ID + '&wait=true', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('discord post failed: ' + res.status);
+      discordPostBtn.style.display = 'none';
+      discordPostStatus.textContent = '投稿しました！✨';
+      discordPostStatus.style.color = 'var(--aether)';
+      discordPostStatus.style.display = 'block';
+    } catch (e) {
+      discordPostBtn.disabled = false;
+      discordPostBtn.textContent = '🎉 Discordに投稿する';
+      discordPostStatus.textContent = '投稿に失敗しました。通信状況を確認してもう一度お試しください。';
+      discordPostStatus.style.color = 'var(--danger)';
+      discordPostStatus.style.display = 'block';
+    }
+  }
+
   function spawnTapRipple(xPct, yPct) {
     const r = document.createElement('div');
     r.className = 'tap-ripple';
@@ -1859,6 +1926,8 @@
     playView.style.display = 'block';
     newBestBanner.classList.remove('show');
     confettiLayer.innerHTML = '';
+    discordPostBtn.style.display = 'none';
+    discordPostStatus.style.display = 'none';
     flashEl.textContent = '';
     flashEl.className = 'result-flash';
     updateHud();
@@ -2148,10 +2217,17 @@
       switchResultBgmTo('normal', 500);
 
       // サーバー保存はせず、このタブを開いている間だけのセッション内自己ベストと比較する
-      if (lastFinalScore > sessionBestScore) {
+      const isNewBest = lastFinalScore > sessionBestScore;
+      if (isNewBest) {
         sessionBestScore = lastFinalScore;
         celebrateNewBest();
+        discordPostBtn.style.display = 'block';
+        discordPostBtn.disabled = false;
+        discordPostBtn.textContent = '🎉 Discordに投稿する';
+      } else {
+        discordPostBtn.style.display = 'none';
       }
+      sessionBestLabel.textContent = '自己ベスト ' + sessionBestScore;
     }, 500);
   }
 
@@ -2338,5 +2414,6 @@
     resolveRevivalTap();
   });
   retryBtn.addEventListener('click', startGame);
+  discordPostBtn.addEventListener('click', postScoreToDiscord);
 })();
 </script>
