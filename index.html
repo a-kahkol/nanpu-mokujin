@@ -136,7 +136,8 @@
   * { box-sizing: border-box; }
   body { margin: 0; }
   #root {
-    min-height: 100vh;
+    min-height: 100vh; /* 古いブラウザ向けフォールバック */
+    min-height: 100svh; /* ツールバーの開閉で高さが変動しない安定値 */
     position: relative;
     background:
       radial-gradient(circle at 50% -10%, #24325a 0%, transparent 55%),
